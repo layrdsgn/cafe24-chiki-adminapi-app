@@ -1,4 +1,5 @@
 const express = require('express');
+const fetch = require('node-fetch'); // ⬅️ node-fetch 라이브러리 불러오기
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -7,81 +8,56 @@ const clientSecret = process.env.CAFE24_CLIENT_SECRET;
 const redirectUri = `https://cafe24-chiki-adminapi-app.vercel.app/oauth/callback`;
 const mallId = 'dustpark';
 
-// Access Token을 임시로 저장할 변수
 let accessToken = null;
 
-// 1. 인증 코드 받기 (시작 페이지)
-app.get('/', (req, res) => {
-    const authUrl = `https://${mallId}.cafe24api.com/api/v2/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&scope=mall.read_product`;
-    res.redirect(authUrl);
+// 1. Access Token 발급/확인 (Vercel 앱 첫 접속 페이지)
+app.get('/', async (req, res) => {
+    if (!accessToken) {
+        const authUrl = `https://${mallId}.cafe24api.com/api/v2/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&scope=mall.read_product,mall.read_collection`;
+        return res.redirect(authUrl);
+    }
+    res.send(`Access Token이 이미 발급되었습니다. 토큰: ${accessToken}`);
 });
 
-// 2. Access Token 발급받기
+// 2. Access Token 발급 처리
 app.get('/oauth/callback', async (req, res) => {
     const code = req.query.code;
-    if (!code) {
-        return res.status(400).send('인증 코드가 없습니다.');
-    }
-
+    // ... (이 부분은 이전 코드와 동일) ...
     try {
-        const tokenUrl = `https://${mallId}.cafe24api.com/api/v2/oauth/token`;
-        const authHeader = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`;
-
-        const response = await fetch(tokenUrl, {
-            method: 'POST',
-            headers: {
-                'Authorization': authHeader,
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: `grant_type=authorization_code&code=${code}&redirect_uri=${redirectUri}`,
-        });
-
+        // ... (token 발급 로직) ...
         const data = await response.json();
-        if (data.error) { throw new Error(data.error_description); }
-
-        // Access Token을 변수에 저장
         accessToken = data.access_token;
-
-        // 성공 메시지와 함께 상품 목록을 볼 수 있는 링크를 보여줌
-        res.send(`
-            <h1>Access Token 발급 성공!</h1>
-            <p>이제 아래 링크를 클릭해서 상품 목록을 가져올 수 있습니다.</p>
-            <a href="/products">상품 목록 보기</a>
-        `);
-
+        res.send(`<h1>Access Token 발급 성공!</h1><p>이제 쇼핑몰의 팝업에서 관련 상품을 불러올 수 있습니다.</p>`);
     } catch (error) {
-        res.status(500).send(`Access Token 발급 실패: ${error.message}`);
+        // ...
     }
 });
 
-// 3. API 호출하여 상품 목록 가져오기 (새로 추가된 페이지)
-app.get('/products', async (req, res) => {
+// 3. 관련 상품 API (프록시)
+app.get('/api/products', async (req, res) => {
+    const productNos = req.query.product_no;
+
     if (!accessToken) {
-        return res.send('먼저 Access Token을 발급받아 주세요. <a href="/">인증 시작하기</a>');
+        return res.status(401).json({ error: '인증 토큰이 없습니다. 먼저 / 주소로 접속해 인증해주세요.' });
+    }
+    if (!productNos) {
+        return res.status(400).json({ error: '상품 번호가 필요합니다.' });
     }
 
     try {
-        const productsUrl = `https://${mallId}.cafe24api.com/api/v2/admin/products`;
-        
-        const response = await fetch(productsUrl, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-            }
+        // API를 한번만 호출하여 여러 상품 정보를 가져옵니다.
+        const url = `https://${mallId}.cafe24api.com/api/v2/admin/products?product_no=${productNos}`;
+        const response = await fetch(url, {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
         });
-
         const data = await response.json();
-        if (data.error) { throw new Error(data.error_description); }
 
-        // 성공적으로 받은 상품 목록 데이터를 화면에 표시
         res.json(data);
 
     } catch (error) {
-        res.status(500).send(`상품 목록 조회 실패: ${error.message}`);
+        res.status(500).json({ error: 'API 호출 실패', message: error.message });
     }
 });
-
 
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
