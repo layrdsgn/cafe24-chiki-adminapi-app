@@ -21,7 +21,7 @@ app.get('/oauth/callback', async (req, res) => {
     }
 
     try {
-        const tokenUrl = `https://{mall_id}.cafe24api.com/api/v2/oauth/token`; // ‼️ {mall_id}를 실제 쇼핑몰 ID로 변경하세요.
+        const tokenUrl = `https://dustpark.cafe24api.com/api/v2/oauth/token`; // ‼️ {mall_id}를 실제 쇼핑몰 ID로 변경하세요.
         const authHeader = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`;
 
         const response = await fetch(tokenUrl, {
