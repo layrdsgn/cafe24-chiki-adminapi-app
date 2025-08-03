@@ -56,7 +56,7 @@ app.get('/', (req, res) => {
     console.log('✅ [clientSecret]', clientSecret);
     console.log('✅ [redirectUri]', redirectUri);
     // ‼️ scope에 offline_access를 추가하여 refresh_token을 요청합니다.
-    const scope = 'mall.read_product,mall.read_collection,offline_access';
+    const scope = 'mall.read_product';
     const authUrl = `https://${mallId}.cafe24api.com/api/v2/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}`;
     res.redirect(authUrl);
 });
