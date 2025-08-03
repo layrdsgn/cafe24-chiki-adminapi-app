@@ -9,7 +9,11 @@ const redirectUri = `https://cafe24-chiki-adminapi-app.vercel.app/oauth/callback
 
 // 1. 인증 코드 받기 (사용자가 처음 접속할 페이지)
 app.get('/', (req, res) => {
-    const authUrl = `https://dustpark.cafe24api.com/api/v2/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&scope=mall.read_product`; // ‼️ {mall_id}를 실제 쇼핑몰 ID로 변경하세요.
+    // ‼️ clientId가 비어있는지 확인하는 코드를 추가합니다.
+    if (!clientId) {
+        return res.send('오류: Vercel에 CAFE24_CLIENT_ID가 등록되지 않았거나, 재배포가 필요합니다.');
+    }
+    const authUrl = `https://dustpark.cafe24api.com/api/v2/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&scope=mall.read_product`;
     res.redirect(authUrl);
 });
 
