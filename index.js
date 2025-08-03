@@ -3,121 +3,116 @@ const fetch = require('node-fetch');
 const app = express();
 const port = process.env.PORT || 3000;
 
+// 환경 변수
 const clientId = process.env.CAFE24_CLIENT_ID;
 const clientSecret = process.env.CAFE24_CLIENT_SECRET;
 const redirectUri = `https://cafe24-chiki-adminapi-app.vercel.app/oauth/callback`;
 const mallId = 'dustpark';
 
-// 토큰 정보를 저장할 변수 (실제 서비스에서는 DB에 저장해야 합니다)
+// 토큰 저장소 (DB 없는 컴맹용)
 let tokenInfo = {
     accessToken: null,
     refreshToken: null,
     expiresAt: null
 };
 
-// Access Token을 자동으로 갱신하는 함수
-async function refreshToken() {
-    try {
-        const tokenUrl = `https://${mallId}.cafe24api.com/api/v2/oauth/token`;
-        const authHeader = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`;
-
-        const response = await fetch(tokenUrl, {
-            method: 'POST',
-            headers: {
-                'Authorization': authHeader,
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: `grant_type=refresh_token&refresh_token=${tokenInfo.refreshToken}`,
-        });
-
-        const data = await response.json();
-        if (data.error) { throw new Error(data.error_description); }
-
-        // 새로 발급받은 토큰 정보 업데이트
-        tokenInfo.accessToken = data.access_token;
-        tokenInfo.refreshToken = data.refresh_token;
-        // 현재 시간 기준으로 만료 시간 계산 (초 단위)
-        tokenInfo.expiresAt = new Date().getTime() + (data.expires_in * 1000);
-        
-        console.log('Access Token이 성공적으로 갱신되었습니다.');
-
-    } catch (error) {
-        console.error('Access Token 갱신 실패:', error);
-        // 갱신 실패 시 토큰 정보 초기화
-        tokenInfo.accessToken = null;
-        tokenInfo.refreshToken = null;
-        tokenInfo.expiresAt = null;
-    }
+// ✅ access_token 만료 여부 확인
+function isTokenExpired() {
+    return !tokenInfo.expiresAt || new Date().getTime() > tokenInfo.expiresAt;
 }
 
-// 1. 인증 시작 페이지
+// ✅ 자동 갱신 함수
+async function refreshAccessToken() {
+    const tokenUrl = `https://${mallId}.cafe24api.com/api/v2/oauth/token`;
+    const authHeader = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`;
+
+    const response = await fetch(tokenUrl, {
+        method: 'POST',
+        headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: `grant_type=refresh_token&refresh_token=${tokenInfo.refreshToken}`,
+    });
+
+    const data = await response.json();
+    if (data.error) throw new Error(data.error_description);
+
+    tokenInfo.accessToken = data.access_token;
+    tokenInfo.refreshToken = data.refresh_token; // 중요: 새로 받을 수 있음
+    tokenInfo.expiresAt = new Date().getTime() + (data.expires_in * 1000);
+
+    console.log('✅ Access Token 자동 갱신 성공');
+}
+
+// ✅ 인증 상태 체크 미들웨어
+async function ensureAuthenticated(req, res, next) {
+    if (!tokenInfo.accessToken) {
+        return res.status(401).send('🔒 인증이 필요합니다. <a href="/">여기</a>를 눌러 인증을 시작하세요.');
+    }
+
+    if (isTokenExpired()) {
+        try {
+            await refreshAccessToken();
+        } catch (error) {
+            return res.status(401).send('🔄 토큰 갱신 실패. <a href="/">인증 다시 하기</a>');
+        }
+    }
+
+    next(); // 통과
+}
+
+// ✅ 인증 시작
 app.get('/', (req, res) => {
-    console.log('✅ [clientId]', clientId);
-    console.log('✅ [clientSecret]', clientSecret);
-    console.log('✅ [redirectUri]', redirectUri);
-    // ‼️ scope에 offline_access를 추가하여 refresh_token을 요청합니다.
-    const scope = 'mall.read_product';
+    const scope = 'mall.read_product'; // refresh_token 포함됨
     const authUrl = `https://${mallId}.cafe24api.com/api/v2/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}`;
     res.redirect(authUrl);
 });
 
-// 2. Access Token 최초 발급
+// ✅ 콜백: 토큰 받기
 app.get('/oauth/callback', async (req, res) => {
     const code = req.query.code;
-    if (!code) { return res.status(400).send('인증 코드가 없습니다.'); }
+    if (!code) return res.status(400).send('❌ 인증 코드가 없습니다.');
 
-    try {
-        const tokenUrl = `https://${mallId}.cafe24api.com/api/v2/oauth/token`;
-        const authHeader = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`;
+    const tokenUrl = `https://${mallId}.cafe24api.com/api/v2/oauth/token`;
+    const authHeader = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`;
 
-        const response = await fetch(tokenUrl, {
-            method: 'POST',
-            headers: { 'Authorization': authHeader, 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `grant_type=authorization_code&code=${code}&redirect_uri=${redirectUri}`,
-        });
+    const response = await fetch(tokenUrl, {
+        method: 'POST',
+        headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: `grant_type=authorization_code&code=${code}&redirect_uri=${redirectUri}`,
+    });
 
-        const data = await response.json();
-        if (data.error) { throw new Error(data.error_description); }
+    const data = await response.json();
+    if (data.error) return res.status(500).send(`토큰 발급 실패: ${data.error_description}`);
 
-        // 받아온 토큰 정보를 변수에 저장
-        tokenInfo.accessToken = data.access_token;
-        tokenInfo.refreshToken = data.refresh_token;
-        tokenInfo.expiresAt = new Date().getTime() + (data.expires_in * 1000);
+    tokenInfo.accessToken = data.access_token;
+    tokenInfo.refreshToken = data.refresh_token;
+    tokenInfo.expiresAt = new Date().getTime() + (data.expires_in * 1000);
 
-        res.send(`<h1>인증 성공!</h1><p>이제 쇼핑몰 팝업에서 관련 상품을 불러올 수 있습니다.</p>`);
-    } catch (error) {
-        res.status(500).send(`Access Token 발급 실패: ${error.message}`);
-    }
+    res.send(`<h1>🎉 인증 완료!</h1><p><a href="/products">→ 상품 목록 보기</a></p>`);
 });
 
-// 3. 관련 상품 API (프록시)
-app.get('/api/products', async (req, res) => {
-    const productNos = req.query.product_no;
-
-    // 토큰이 만료되었는지 확인하고, 만료되었다면 갱신
-    if (tokenInfo.expiresAt && new Date().getTime() > tokenInfo.expiresAt) {
-        await refreshToken();
-    }
-
-    if (!tokenInfo.accessToken) {
-        return res.status(401).json({ error: '인증이 필요합니다. <a href="/">여기</a>를 클릭하여 인증을 시작하세요.' });
-    }
-    if (!productNos) {
-        return res.status(400).json({ error: '상품 번호가 필요합니다.' });
-    }
-
+// ✅ 상품 목록 API (보호됨)
+app.get('/products', ensureAuthenticated, async (req, res) => {
     try {
-        const url = `https://${mallId}.cafe24api.com/api/v2/admin/products?product_no=${productNos}`;
-        const response = await fetch(url, {
-            headers: { 'Authorization': `Bearer ${tokenInfo.accessToken}` }
+        const apiUrl = `https://${mallId}.cafe24api.com/api/v2/admin/products`;
+        const response = await fetch(apiUrl, {
+            headers: {
+                'Authorization': `Bearer ${tokenInfo.accessToken}`,
+            },
         });
         const data = await response.json();
+
         res.json(data);
     } catch (error) {
-        res.status(500).json({ error: 'API 호출 실패', message: error.message });
+        res.status(500).json({ error: '상품 API 실패', message: error.message });
     }
 });
 
 app.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
+    console.log(`✅ Server is running on port ${port}`);
 });
