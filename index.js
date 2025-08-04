@@ -1,8 +1,9 @@
 const express = require('express'); // ✅ 꼭 있어야 함
 const fetch = require('node-fetch');
 const ensureAuth = require('./authMiddleware');
-
 const app = express();
+const cors = require('cors');
+app.use(cors());
 const port = process.env.PORT || 3000;
 
 const clientId = process.env.CAFE24_CLIENT_ID;
@@ -57,26 +58,36 @@ app.get('/oauth/callback', async (req, res) => {
 
 // 3. 상품 조회 API (미들웨어로 보호)
 app.get('/api/products', ensureAuth, async (req, res) => {
-    const { product_no } = req.query;
-    if (!product_no) return res.status(400).json({ error: 'product_no 쿼리가 필요합니다.' });
+  const { product_no, product_code } = req.query;
 
-    try {
-        const tokenInfo = req.app.locals.tokenInfo;
-        const url = `https://${mallId}.cafe24api.com/api/v2/admin/products?product_no=${product_no}`;
+  if (!product_no && !product_code) {
+    return res.status(400).json({ error: 'product_no 또는 product_code 쿼리가 필요합니다.' });
+  }
 
-        const response = await fetch(url, {
-            headers: {
-                'Authorization': `Bearer ${tokenInfo.accessToken}`,
-                'Content-Type': 'application/json'
-            }
-        });
+  const tokenInfo = req.app.locals.tokenInfo;
+  let url;
 
-        const data = await response.json();
-        res.json(data);
-    } catch (error) {
-        res.status(500).json({ error: 'API 요청 실패', message: error.message });
-    }
+  if (product_no) {
+    url = `https://${mallId}.cafe24api.com/api/v2/admin/products?product_no=${product_no}`;
+  } else if (product_code) {
+    url = `https://${mallId}.cafe24api.com/api/v2/admin/products?product_code=${product_code}`;
+  }
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${tokenInfo.accessToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: 'API 요청 실패', message: error.message });
+  }
 });
+
 
 app.listen(port, () => {
     console.log(`✅ Server running on port ${port}`);
