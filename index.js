@@ -1,6 +1,7 @@
-const ensureAuthenticated = require('./authMiddleware');
+const express = require('express'); // ✅ 꼭 있어야 함
 const fetch = require('node-fetch');
 const ensureAuth = require('./authMiddleware');
+
 const app = express();
 const port = process.env.PORT || 3000;
 
