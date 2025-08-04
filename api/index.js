@@ -124,4 +124,9 @@ app.get('/related', ensureAuth, async (req, res) => {
         res.status(500).json({ error: '관련 상품 불러오기 실패', message: error.message });
     }
 });
-module.exports = app;
+// 모든 정의된 라우트가 요청을 처리하지 못했을 때 이 미들웨어가 실행됩니다.
+app.use((req, res) => {
+  res.status(404).json({ error: '404: NOT_FOUND', message: `요청하신 경로 (${req.originalUrl})를 찾을 수 없습니다.` });
+});
+
+module.exports = app; // 이 라인 바로 위에 붙입니다.
