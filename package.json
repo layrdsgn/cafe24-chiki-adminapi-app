@@ -1,5 +1,5 @@
 {
-  "name": "cafe24-chiki-adminapi-app",
+  "name": "cafe24-vercel-api",
   "version": "1.0.0",
   "main": "index.js",
   "dependencies": {
